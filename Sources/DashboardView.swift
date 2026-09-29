@@ -175,7 +175,18 @@ struct DashboardView: View {
     }
 
     private func timestamp(_ raw: String?) -> String? {
-        guard let raw, let date = ISO8601DateFormatter().date(from: raw) else { return nil }
+        guard let raw else { return nil }
+
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let standard = ISO8601DateFormatter()
+        standard.formatOptions = [.withInternetDateTime]
+
+        guard let date = fractional.date(from: raw) ?? standard.date(from: raw) else {
+            return nil
+        }
+
         return date.formatted(date: .omitted, time: .standard)
     }
 }
