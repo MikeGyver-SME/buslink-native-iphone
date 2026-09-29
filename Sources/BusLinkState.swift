@@ -1,33 +1,12 @@
 import Foundation
 import UserNotifications
 
-enum BusLinkDate {
-    // Worker timestamps are ISO-8601 UTC strings and normally include fractional seconds.
-    // ISO8601DateFormatter does not parse fractional seconds unless explicitly enabled.
-    private static let fractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    // Keep a fallback for valid ISO-8601 timestamps that omit fractional seconds.
-    private static let standard: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
-
-    static func parse(_ raw: String) -> Date? {
-        fractional.date(from: raw) ?? standard.date(from: raw)
-    }
-}
-
 struct BusEvent: Decodable, Identifiable {
     let label: String
     let at: String
     let source: String
     var id: String { "\(at)|\(label)|\(source)" }
-    var date: Date? { BusLinkDate.parse(at) }
+    var date: Date? { ISO8601DateFormatter().date(from: at) }
 }
 
 struct ServerPeriod: Decodable {
@@ -58,6 +37,7 @@ final class BusLinkModel: ObservableObject {
     private let stateURL = URL(string: "https://buslink.mikegyver.workers.dev/api/state")!
     private let seenKey = "buslink.native.seen.eventIDs.v1"
     private let seededKey = "buslink.native.seeded.v1"
+    private var displayedPeriod: String?
 
     var watch: String? { WatchSchedule.watch(at: clock) }
     var onWatch: Bool { watch != nil }
@@ -68,7 +48,13 @@ final class BusLinkModel: ObservableObject {
 
     func syncClock() {
         clock = Date()
-        if currentState == nil { state = nil; lastUpdated = nil; error = nil }
+        let period = WatchSchedule.periodID(at: clock)
+        if period != displayedPeriod {
+            displayedPeriod = period
+            state = nil
+            lastUpdated = nil
+            error = nil
+        }
     }
 
     func refresh() async {
@@ -97,6 +83,7 @@ final class BusLinkModel: ObservableObject {
             await notifyForNewEvents(next)
         } catch {
             // Keep the last valid state on screen. Notification failures never affect health.
+            guard WatchSchedule.periodID() == requestedPeriod else { return }
             self.error = error.localizedDescription
         }
     }

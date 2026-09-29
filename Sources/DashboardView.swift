@@ -66,21 +66,35 @@ struct DashboardView: View {
                       systemImage: model.onWatch ? "dot.radiowaves.left.and.right" : "moon.stars.fill")
                     .font(.subheadline.bold()).foregroundStyle(model.onWatch ? mint : .white.opacity(0.65))
                 Spacer()
-                Text(model.onWatch ? "LIVE" : "STANDBY")
+                Text(model.onWatch ? (model.error == nil && model.lastUpdated != nil ? "LIVE" : "WATCH") : "STANDBY")
                     .font(.caption.bold()).tracking(1)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background((model.onWatch ? mint : .gray).opacity(0.18), in: Capsule())
             }
             Text("8:15–9:00 AM  •  4:15–5:00 PM CT")
                 .font(.caption).foregroundStyle(.white.opacity(0.65))
-            if let error = model.error {
-                Label(error, systemImage: "wifi.exclamationmark")
+            if !model.onWatch {
+                Label("Paused until the next weekday watch. No Worker requests now; connection untested.",
+                      systemImage: "pause.circle.fill")
+                    .font(.caption).foregroundStyle(.white.opacity(0.65))
+            } else if let error = model.error {
+                Label("Worker check failed: \(error)", systemImage: "wifi.exclamationmark")
                     .font(.caption).foregroundStyle(.orange)
+                if let date = model.lastUpdated {
+                    Text("Last successful update: \(date.formatted(date: .omitted, time: .standard)). Retrying while on watch.")
+                        .font(.caption).foregroundStyle(.white.opacity(0.65))
+                } else {
+                    Text("Retrying while on watch.")
+                        .font(.caption).foregroundStyle(.white.opacity(0.65))
+                }
             } else if let date = model.lastUpdated {
                 Label("Updated \(date.formatted(date: .omitted, time: .standard))", systemImage: "checkmark.circle.fill")
                     .font(.caption).foregroundStyle(mint)
-            } else {
+            } else if model.loading {
                 ProgressView("Connecting to BusLink…").tint(mint)
+            } else {
+                Label("Waiting for the first Worker check…", systemImage: "clock")
+                    .font(.caption).foregroundStyle(.white.opacity(0.65))
             }
         }
         .padding(18).frame(maxWidth: .infinity, alignment: .leading)
@@ -94,7 +108,9 @@ struct DashboardView: View {
         let title = ready ? "RENDEZVOUS READY" : (bus && model.watch == "AM" ? "GO TO THE BUS" : (model.onWatch ? "WAITING" : "OFF WATCH"))
         let detail = ready ? (model.watch == "AM" ? "The 1-mile Loop alert and Shaira’s arrival are confirmed." : "Shaira is at the stop and Colin’s bus is almost home.")
             : bus ? (model.watch == "AM" ? "The bus reached the 1-mile Loop." : "The bus is almost home; waiting for Shaira.")
-            : shaira ? "Shaira is at the stop; waiting for the bus." : "Your Shortcuts send events to the existing BusLink Worker."
+            : shaira ? "Shaira is at the stop; waiting for the bus."
+            : model.onWatch ? "Your Shortcuts send events to the existing BusLink Worker."
+            : "Status checks resume during the next weekday watch. Shortcuts continue sending events independently."
         return VStack(alignment: .leading, spacing: 12) {
             Text(title).font(.title2.bold()).foregroundStyle(ready || bus ? navy : .white)
             Text(detail).font(.subheadline).foregroundStyle(ready || bus ? navy.opacity(0.8) : .white.opacity(0.7))
@@ -130,7 +146,7 @@ struct DashboardView: View {
                     if event.id != events.last?.id { Divider().overlay(.white.opacity(0.12)) }
                 }
             } else {
-                Text("No events for this watch period.")
+                Text(model.onWatch ? "No events for this watch period." : "Event log resumes during the next watch.")
                     .font(.subheadline).foregroundStyle(.white.opacity(0.6))
             }
         }
@@ -141,10 +157,11 @@ struct DashboardView: View {
     private var controls: some View {
         VStack(alignment: .leading, spacing: 12) {
             Button { Task { await model.refresh() } } label: {
-                Label("Refresh now", systemImage: "arrow.clockwise")
+                Label(model.onWatch ? "Refresh now" : "Refresh available on watch", systemImage: "arrow.clockwise")
                     .frame(maxWidth: .infinity).padding(14)
             }
             .buttonStyle(.borderedProminent).tint(mint)
+            .disabled(!model.onWatch || model.loading)
             if !model.notificationsEnabled {
                 Button { Task { await model.enableNotifications() } } label: {
                     Label("Enable alerts while app is open", systemImage: "bell.badge")
@@ -158,7 +175,7 @@ struct DashboardView: View {
     }
 
     private func timestamp(_ raw: String?) -> String? {
-        guard let raw, let date = BusLinkDate.parse(raw) else { return nil }
+        guard let raw, let date = ISO8601DateFormatter().date(from: raw) else { return nil }
         return date.formatted(date: .omitted, time: .standard)
     }
 }
