@@ -1,0 +1,31 @@
+name: Build BusLink iPhone IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Xcode project
+        run: |
+          xcodebuild -version
+          brew install xcodegen
+          xcodegen generate
+      - name: Compile for physical iPhone
+        run: |
+          xcodebuild -project BusLinkNative.xcodeproj -scheme BusLinkNative -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/BusLinkBuild" CODE_SIGNING_ALLOWED=NO build
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/BusLinkBuild/Build/Products/Release-iphoneos/BusLinkNative.app" "$RUNNER_TEMP/ipa/Payload/"
+          cd "$RUNNER_TEMP/ipa"
+          zip -qr "$GITHUB_WORKSPACE/BusLinkNative-unsigned.ipa" Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BusLinkNative-unsigned-ipa
+          path: BusLinkNative-unsigned.ipa
+          retention-days: 14
