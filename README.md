@@ -4,6 +4,8 @@ This SwiftUI app is a native, read-only view of the existing BusLink Worker. It 
 
 The app reads `https://buslink.mikegyver.workers.dev/api/state` without a secret. Confirm this is your deployed Worker URL before building; if different, edit `stateURL` in `Sources/BusLinkState.swift`. It does not call event or reset endpoints, contain `BUSLINK_EVENT_SECRET`, modify Durable Object storage, or change the current Stopfinder Shortcuts. It runs beside the existing web dashboard and Windows Watchdog.
 
+Off watch, the dashboard says **Paused** and **connection untested** because it does not contact the Worker. During a weekday watch it shows **Connecting** only while the first request is in flight, **Updated** after a successful response, or **Worker check failed** with the request error and automatic retry if a check fails. A past successful update remains visible with its timestamp if a later check fails. Native `URLSession` requests are not subject to browser CORS rules.
+
 ## Important alert limitation
 
 iOS does not promise regular 10-second network polling when an app is closed or in the background. This app is **not** a replacement for the existing iPhone Shortcuts or Windows Watchdog, and it does not promise a background iPhone alert at the one-mile loop. It may display a new banner only while it is open and polling. On first launch, existing event history becomes a baseline and is shown on screen without a delayed alert. When a new event arrives, the app records it as seen even if alert permission is denied. Enable alerts before your watch period to hear them in the app.

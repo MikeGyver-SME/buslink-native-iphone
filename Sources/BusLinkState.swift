@@ -37,6 +37,7 @@ final class BusLinkModel: ObservableObject {
     private let stateURL = URL(string: "https://buslink.mikegyver.workers.dev/api/state")!
     private let seenKey = "buslink.native.seen.eventIDs.v1"
     private let seededKey = "buslink.native.seeded.v1"
+    private var displayedPeriod: String?
 
     var watch: String? { WatchSchedule.watch(at: clock) }
     var onWatch: Bool { watch != nil }
@@ -47,7 +48,13 @@ final class BusLinkModel: ObservableObject {
 
     func syncClock() {
         clock = Date()
-        if currentState == nil { state = nil; lastUpdated = nil; error = nil }
+        let period = WatchSchedule.periodID(at: clock)
+        if period != displayedPeriod {
+            displayedPeriod = period
+            state = nil
+            lastUpdated = nil
+            error = nil
+        }
     }
 
     func refresh() async {
@@ -76,6 +83,7 @@ final class BusLinkModel: ObservableObject {
             await notifyForNewEvents(next)
         } catch {
             // Keep the last valid state on screen. Notification failures never affect health.
+            guard WatchSchedule.periodID() == requestedPeriod else { return }
             self.error = error.localizedDescription
         }
     }
