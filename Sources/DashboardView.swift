@@ -60,41 +60,38 @@ struct DashboardView: View {
     }
 
     private var watchCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let title = model.onWatch ? (model.watch == "AM" ? "MORNING WATCH" : "AFTERNOON WATCH")
+            : model.schoolOffReason != nil ? "SCHOOL OFF"
+            : WatchSchedule.isWeekend(at: model.clock) ? "WEEKEND" : "OFF WATCH"
+        let icon = model.onWatch ? "dot.radiowaves.left.and.right"
+            : model.schoolOffReason != nil ? "calendar.badge.minus" : "moon.stars.fill"
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label(model.onWatch ? (model.watch == "AM" ? "MORNING WATCH" : "AFTERNOON WATCH") : "OFF WATCH",
-                      systemImage: model.onWatch ? "dot.radiowaves.left.and.right" : "moon.stars.fill")
+                Label(title, systemImage: icon)
                     .font(.subheadline.bold()).foregroundStyle(model.onWatch ? mint : .white.opacity(0.65))
                 Spacer()
-                Text(model.onWatch ? (model.error == nil && model.lastUpdated != nil ? "LIVE" : "WATCH") : "STANDBY")
+                Text(model.onWatch ? "LIVE" : "STANDBY")
                     .font(.caption.bold()).tracking(1)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background((model.onWatch ? mint : .gray).opacity(0.18), in: Capsule())
             }
-            Text("8:15–9:00 AM  •  4:15–5:00 PM CT")
+            Text("Mon–Fri • 8:15–9:00 AM  •  4:15–5:00 PM CT")
                 .font(.caption).foregroundStyle(.white.opacity(0.65))
-            if !model.onWatch {
-                Label("Paused until the next weekday watch. No Worker requests now; connection untested.",
-                      systemImage: "pause.circle.fill")
+            if let reason = model.schoolOffReason {
+                Label("Monitoring paused • \(reason)", systemImage: "pause.circle.fill")
+                    .font(.caption).foregroundStyle(.white.opacity(0.65))
+            } else if WatchSchedule.isWeekend(at: model.clock) {
+                Label("No Saturday/Sunday bus service", systemImage: "calendar")
                     .font(.caption).foregroundStyle(.white.opacity(0.65))
             } else if let error = model.error {
-                Label("Worker check failed: \(error)", systemImage: "wifi.exclamationmark")
+                Label(error, systemImage: "wifi.exclamationmark")
                     .font(.caption).foregroundStyle(.orange)
-                if let date = model.lastUpdated {
-                    Text("Last successful update: \(date.formatted(date: .omitted, time: .standard)). Retrying while on watch.")
-                        .font(.caption).foregroundStyle(.white.opacity(0.65))
-                } else {
-                    Text("Retrying while on watch.")
-                        .font(.caption).foregroundStyle(.white.opacity(0.65))
-                }
             } else if let date = model.lastUpdated {
                 Label("Updated \(date.formatted(date: .omitted, time: .standard))", systemImage: "checkmark.circle.fill")
                     .font(.caption).foregroundStyle(mint)
-            } else if model.loading {
-                ProgressView("Connecting to BusLink…").tint(mint)
             } else {
-                Label("Waiting for the first Worker check…", systemImage: "clock")
-                    .font(.caption).foregroundStyle(.white.opacity(0.65))
+                Text(model.onWatch ? "Connecting to BusLink…" : "Monitoring resumes at the next watch.")
+                    .font(.caption).foregroundStyle(.white.opacity(0.55))
             }
         }
         .padding(18).frame(maxWidth: .infinity, alignment: .leading)
@@ -105,12 +102,16 @@ struct DashboardView: View {
         let bus = model.currentState?.bus == true && model.onWatch
         let shaira = model.currentState?.shaira == true && model.onWatch
         let ready = bus && shaira
-        let title = ready ? "RENDEZVOUS READY" : (bus && model.watch == "AM" ? "GO TO THE BUS" : (model.onWatch ? "WAITING" : "OFF WATCH"))
+        let title = ready ? "RENDEZVOUS READY"
+            : model.schoolOffReason != nil ? "SCHOOL OFF"
+            : WatchSchedule.isWeekend(at: model.clock) ? "WEEKEND"
+            : (bus && model.watch == "AM" ? "GO TO THE BUS" : (model.onWatch ? "WAITING" : "OFF WATCH"))
         let detail = ready ? (model.watch == "AM" ? "The 1-mile Loop alert and Shaira’s arrival are confirmed." : "Shaira is at the stop and Colin’s bus is almost home.")
             : bus ? (model.watch == "AM" ? "The bus reached the 1-mile Loop." : "The bus is almost home; waiting for Shaira.")
             : shaira ? "Shaira is at the stop; waiting for the bus."
-            : model.onWatch ? "Your Shortcuts send events to the existing BusLink Worker."
-            : "Status checks resume during the next weekday watch. Shortcuts continue sending events independently."
+            : model.schoolOffReason != nil ? "Bus monitoring is paused for \(model.schoolOffReason!)."
+            : WatchSchedule.isWeekend(at: model.clock) ? "No school bus monitoring on Saturday or Sunday."
+            : "Your Shortcuts send events to the existing BusLink Worker."
         return VStack(alignment: .leading, spacing: 12) {
             Text(title).font(.title2.bold()).foregroundStyle(ready || bus ? navy : .white)
             Text(detail).font(.subheadline).foregroundStyle(ready || bus ? navy.opacity(0.8) : .white.opacity(0.7))
@@ -146,7 +147,9 @@ struct DashboardView: View {
                     if event.id != events.last?.id { Divider().overlay(.white.opacity(0.12)) }
                 }
             } else {
-                Text(model.onWatch ? "No events for this watch period." : "Event log resumes during the next watch.")
+                Text(model.schoolOffReason != nil ? "Event log paused for this school-off day."
+                     : WatchSchedule.isWeekend(at: model.clock) ? "Event log resumes on the next school day."
+                     : "No events for this watch period.")
                     .font(.subheadline).foregroundStyle(.white.opacity(0.6))
             }
         }
@@ -157,36 +160,24 @@ struct DashboardView: View {
     private var controls: some View {
         VStack(alignment: .leading, spacing: 12) {
             Button { Task { await model.refresh() } } label: {
-                Label(model.onWatch ? "Refresh now" : "Refresh available on watch", systemImage: "arrow.clockwise")
+                Label("Refresh now", systemImage: "arrow.clockwise")
                     .frame(maxWidth: .infinity).padding(14)
             }
             .buttonStyle(.borderedProminent).tint(mint)
-            .disabled(!model.onWatch || model.loading)
             if !model.notificationsEnabled {
                 Button { Task { await model.enableNotifications() } } label: {
                     Label("Enable alerts while app is open", systemImage: "bell.badge")
                         .frame(maxWidth: .infinity).padding(10)
                 }.buttonStyle(.bordered)
             }
-            Text("The app refreshes while open. Keep your iPhone Shortcuts and Windows Watchdog for event detection and laptop alerts. Background iPhone alerts are not guaranteed by this version.")
+            Text("The app refreshes while open during active school-day watches. Weekend and school-off monitoring is paused. Keep iPhone Shortcuts and Windows Watchdog for event detection and laptop alerts.")
                 .font(.caption).foregroundStyle(.white.opacity(0.55))
         }
         .padding(.bottom, 16)
     }
 
     private func timestamp(_ raw: String?) -> String? {
-        guard let raw else { return nil }
-
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-        let standard = ISO8601DateFormatter()
-        standard.formatOptions = [.withInternetDateTime]
-
-        guard let date = fractional.date(from: raw) ?? standard.date(from: raw) else {
-            return nil
-        }
-
+        guard let raw, let date = BusLinkDate.parse(raw) else { return nil }
         return date.formatted(date: .omitted, time: .standard)
     }
 }

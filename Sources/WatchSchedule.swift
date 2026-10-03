@@ -1,11 +1,17 @@
 import Foundation
 
-/// The same weekday watch windows as the family's BusLink schedule, in Central time.
+/// Local guardrail for BusLink's Central-time school-week windows.
+/// The Worker remains authoritative for weekday school holidays/breaks.
 enum WatchSchedule {
     private static var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/Chicago")!
         return calendar
+    }
+
+    static func isWeekend(at date: Date = Date()) -> Bool {
+        let weekday = calendar.component(.weekday, from: date)
+        return weekday == 1 || weekday == 7
     }
 
     static func watch(at date: Date = Date()) -> String? {
@@ -18,11 +24,14 @@ enum WatchSchedule {
         return nil
     }
 
+    static func dayID(at date: Date = Date()) -> String {
+        let fields = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", fields.year ?? 0, fields.month ?? 0, fields.day ?? 0)
+    }
+
     static func periodID(at date: Date = Date()) -> String? {
         guard let watch = watch(at: date) else { return nil }
-        let fields = calendar.dateComponents([.year, .month, .day], from: date)
-        guard let year = fields.year, let month = fields.month, let day = fields.day else { return nil }
-        return String(format: "%04d-%02d-%02d-%@", year, month, day, watch)
+        return "\(dayID(at: date))-\(watch)"
     }
 
     static func secondsUntilNextStart(after date: Date = Date()) -> TimeInterval {
@@ -37,6 +46,6 @@ enum WatchSchedule {
                 return start.timeIntervalSince(date)
             }
         }
-        return 60 // Defensive fallback; still does not make a network request.
+        return 60
     }
 }

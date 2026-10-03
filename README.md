@@ -1,20 +1,39 @@
-# BusLink native iPhone field test
+# BusLink Native iPhone V1.1 — School Calendar Awareness
 
-This SwiftUI app is a native, read-only view of the existing BusLink Worker. It displays the AM/PM watch, Colin's bus and Shaira status, event history, and connection state. It reads the Worker every 10 seconds **only while open during a weekday watch**: Monday–Friday 8:15–8:59 AM and 4:15–4:59 PM America/Chicago (automatically CST or CDT). It makes no Worker calls outside those windows, including Saturday and Sunday. Pull-to-refresh and the manual refresh button also respect that gate. Optional local notification banners are delivered for newly discovered events while the app is active.
+This SwiftUI app remains a native, read-only observer of the BusLink Worker.
 
-The app reads `https://buslink.mikegyver.workers.dev/api/state` without a secret. Confirm this is your deployed Worker URL before building; if different, edit `stateURL` in `Sources/BusLinkState.swift`. It does not call event or reset endpoints, contain `BUSLINK_EVENT_SECRET`, modify Durable Object storage, or change the current Stopfinder Shortcuts. It runs beside the existing web dashboard and Windows Watchdog.
+## V1.1 changes
 
-Off watch, the dashboard says **Paused** and **connection untested** because it does not contact the Worker. During a weekday watch it shows **Connecting** only while the first request is in flight, **Updated** after a successful response, or **Worker check failed** with the request error and automatic retry if a check fails. A past successful update remains visible with its timestamp if a later check fails. Native `URLSession` requests are not subject to browser CORS rules.
+- Monday–Friday local watch guard remains in place; Saturday/Sunday make no watch-period network calls.
+- During a weekday AM/PM window, the Worker is authoritative for school holidays/breaks.
+- If V1.4 reports `school-off`, the app displays **SCHOOL OFF** and pauses automatic 10-second refreshes for that local window.
+- Weekend UI displays **WEEKEND**.
+- The fractional-second ISO-8601 event timestamp fix remains intact.
+- No event/admin secret is embedded in the app and no write endpoint is called.
 
-## Important alert limitation
+The app continues to read:
 
-iOS does not promise regular 10-second network polling when an app is closed or in the background. This app is **not** a replacement for the existing iPhone Shortcuts or Windows Watchdog, and it does not promise a background iPhone alert at the one-mile loop. It may display a new banner only while it is open and polling. On first launch, existing event history becomes a baseline and is shown on screen without a delayed alert. When a new event arrives, the app records it as seen even if alert permission is denied. Enable alerts before your watch period to hear them in the app.
+`https://buslink.mikegyver.workers.dev/api/state`
 
 ## Build without a Mac
 
-1. Create an empty GitHub repository, for example `buslink-native-iphone`. Unzip this package and push **its contents** (including `.github`) to `main`.
-2. GitHub Actions starts **Build BusLink iPhone IPA** on each push. You can also run it manually. Open the successful run's **Artifacts** and download `BusLinkNative-unsigned-ipa`.
-3. Unzip the artifact download and install `BusLinkNative-unsigned.ipa` with Sideloadly on Windows using your Apple Account and connected iPhone. Developer Mode and developer trust are already familiar from PrismCam/Wiggs Locator. The free signing interval is about seven days.
-4. Open BusLink during a weekday watch. Verify the current watch and server state match the browser dashboard. Tap **Enable alerts while app is open** and allow notifications if desired. Outside a watch, the app shows standby without contacting the Worker.
+1. Replace the contents of the existing `buslink-native-iphone` GitHub repository with this package (including `.github`).
+2. Push to `main` or run **Build BusLink iPhone IPA** manually.
+3. Download the `BusLinkNative-unsigned-ipa` artifact.
+4. Install the unsigned IPA using the same AltServer workflow already proven for the user's native iOS apps.
 
-This package was checked for source and ZIP integrity here. Compilation and device behavior must be verified by the GitHub run and your iPhone. The first live test should compare the native dashboard with `/api/state` and the existing web dashboard during a watch window.
+`MARKETING_VERSION` is 1.1.0 and build number is 2.
+
+## Operational behavior
+
+- Normal weekday watch: refreshes every 10 seconds while open.
+- Weekend: standby; no watch polling.
+- School-off weekday: one authoritative check when the local watch is reached, then standby for that window.
+- Manual Refresh during a local weekday watch can force a schedule re-check after changing School Off/On.
+- iPhone Shortcuts and the Windows Watchdog remain responsible for event detection/laptop alerts; the native app is an observer.
+
+## Validation performed before packaging
+
+- Swift parser check passed for all source files in the build environment.
+- `WatchSchedule` compiled and passed a Friday-AM / Saturday-suppression smoke test using Foundation.
+- Full SwiftUI/iPhone compilation must still be verified by the GitHub macOS Action, as before.

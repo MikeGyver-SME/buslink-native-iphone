@@ -1,17 +1,41 @@
 import Foundation
 import UserNotifications
 
+enum BusLinkDate {
+    // Worker timestamps are ISO-8601 UTC strings and normally include fractional seconds.
+    // ISO8601DateFormatter does not parse fractional seconds unless explicitly enabled.
+    private static let fractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    // Keep a fallback for valid ISO-8601 timestamps that omit fractional seconds.
+    private static let standard: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    static func parse(_ raw: String) -> Date? {
+        fractional.date(from: raw) ?? standard.date(from: raw)
+    }
+}
+
 struct BusEvent: Decodable, Identifiable {
     let label: String
     let at: String
     let source: String
     var id: String { "\(at)|\(label)|\(source)" }
-    var date: Date? { ISO8601DateFormatter().date(from: at) }
+    var date: Date? { BusLinkDate.parse(at) }
 }
 
 struct ServerPeriod: Decodable {
     let id: String
     let watch: String?
+    let reason: String?
+    let monitoringEnabled: Bool?
+    let schoolOffReason: String?
 }
 
 struct BusState: Decodable {
@@ -37,29 +61,33 @@ final class BusLinkModel: ObservableObject {
     private let stateURL = URL(string: "https://buslink.mikegyver.workers.dev/api/state")!
     private let seenKey = "buslink.native.seen.eventIDs.v1"
     private let seededKey = "buslink.native.seeded.v1"
-    private var displayedPeriod: String?
 
     var watch: String? { WatchSchedule.watch(at: clock) }
-    var onWatch: Bool { watch != nil }
+    var schoolOffReason: String? {
+        guard state?.serverPeriod.id.hasPrefix(WatchSchedule.dayID(at: clock)) == true,
+              state?.serverPeriod.reason == "school-off" else { return nil }
+        return state?.serverPeriod.schoolOffReason ?? "School holiday / break"
+    }
+    var schedulePaused: Bool { schoolOffReason != nil || WatchSchedule.isWeekend(at: clock) }
+    var onWatch: Bool { watch != nil && !schedulePaused }
     var currentState: BusState? {
-        guard let state, state.period == WatchSchedule.periodID(at: clock) else { return nil }
+        guard onWatch, let state, state.period == WatchSchedule.periodID(at: clock) else { return nil }
         return state
     }
 
     func syncClock() {
         clock = Date()
-        let period = WatchSchedule.periodID(at: clock)
-        if period != displayedPeriod {
-            displayedPeriod = period
-            state = nil
-            lastUpdated = nil
-            error = nil
+        let today = WatchSchedule.dayID(at: clock)
+        if let state, !state.serverPeriod.id.hasPrefix(today) {
+            self.state = nil; lastUpdated = nil; error = nil
         }
     }
 
     func refresh() async {
         syncClock()
-        guard let requestedPeriod = WatchSchedule.periodID(at: clock) else { return }
+        // Local weekday/time guard prevents off-hours/weekend calls. During a local
+        // watch, the Worker is authoritative and may answer SCHOOL OFF.
+        guard let requestedPeriod = WatchSchedule.periodID(at: clock), let requestedWatch = watch else { return }
         guard !loading else { return }
         loading = true
         defer { loading = false }
@@ -73,9 +101,11 @@ final class BusLinkModel: ObservableObject {
                 throw BusLinkError.badHTTP((response as? HTTPURLResponse)?.statusCode ?? 0)
             }
             let next = try JSONDecoder().decode(BusState.self, from: data)
-            guard next.period == requestedPeriod,
-                  next.serverPeriod.id == requestedPeriod,
-                  next.serverPeriod.watch == watch else { throw BusLinkError.invalidPeriod }
+            let today = WatchSchedule.dayID(at: clock)
+            let activeMatch = next.period == requestedPeriod && next.serverPeriod.id == requestedPeriod && next.serverPeriod.watch == requestedWatch
+            let pausedMatch = next.serverPeriod.id == "\(today)-OFF" && next.period == next.serverPeriod.id &&
+                (next.serverPeriod.reason == "school-off" || next.serverPeriod.reason == "weekend")
+            guard activeMatch || pausedMatch else { throw BusLinkError.invalidPeriod }
             guard !Task.isCancelled, WatchSchedule.periodID() == requestedPeriod else { return }
             state = next
             lastUpdated = Date()
@@ -83,7 +113,6 @@ final class BusLinkModel: ObservableObject {
             await notifyForNewEvents(next)
         } catch {
             // Keep the last valid state on screen. Notification failures never affect health.
-            guard WatchSchedule.periodID() == requestedPeriod else { return }
             self.error = error.localizedDescription
         }
     }
