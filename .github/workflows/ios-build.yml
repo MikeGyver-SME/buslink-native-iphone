@@ -18,10 +18,16 @@ jobs:
       - name: Compile for physical iPhone
         run: |
           xcodebuild -project BusLinkNative.xcodeproj -scheme BusLinkNative -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/BusLinkBuild" CODE_SIGNING_ALLOWED=NO build
-      - name: Verify embedded widget
+      - name: Verify embedded WidgetKit registration
         run: |
-          test -d "$RUNNER_TEMP/BusLinkBuild/Build/Products/Release-iphoneos/BusLinkNative.app/PlugIns/BusLinkWidgetExtension.appex"
-          echo "BusLinkWidgetExtension.appex embedded successfully"
+          APPEX="$RUNNER_TEMP/BusLinkBuild/Build/Products/Release-iphoneos/BusLinkNative.app/PlugIns/BusLinkWidgetExtension.appex"
+          PLIST="$APPEX/Info.plist"
+          test -d "$APPEX"
+          test -f "$PLIST"
+          POINT="$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$PLIST")"
+          echo "Built widget extension point: $POINT"
+          test "$POINT" = "com.apple.widgetkit-extension"
+          echo "BusLinkWidgetExtension.appex is embedded and registered as WidgetKit"
       - name: Package unsigned IPA
         run: |
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
@@ -30,6 +36,6 @@ jobs:
           zip -qr "$GITHUB_WORKSPACE/BusLinkNative-unsigned.ipa" Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: BusLinkNative-v1.2.0-carplay-unsigned-ipa
+          name: BusLinkNative-v1.2.1-widget-registration-fix-unsigned-ipa
           path: BusLinkNative-unsigned.ipa
           retention-days: 14

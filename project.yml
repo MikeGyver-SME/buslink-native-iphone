@@ -25,8 +25,8 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        MARKETING_VERSION: 1.2.0
-        CURRENT_PROJECT_VERSION: 3
+        MARKETING_VERSION: 1.2.1
+        CURRENT_PROJECT_VERSION: 4
   BusLinkWidgetExtension:
     type: app-extension
     platform: iOS
@@ -34,12 +34,18 @@ targets:
       - BusLinkWidget
     info:
       path: BusLinkWidget/Info.plist
+      properties:
+        CFBundleDisplayName: BusLink
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: studio.mikegyver.buslinknative.widget
         SKIP_INSTALL: YES
-        MARKETING_VERSION: 1.2.0
-        CURRENT_PROJECT_VERSION: 3
+        MARKETING_VERSION: 1.2.1
+        CURRENT_PROJECT_VERSION: 4
     dependencies:
       - sdk: SwiftUI.framework
       - sdk: WidgetKit.framework
