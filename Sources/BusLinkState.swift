@@ -1,16 +1,14 @@
 import Foundation
 import UserNotifications
+import WidgetKit
 
 enum BusLinkDate {
-    // Worker timestamps are ISO-8601 UTC strings and normally include fractional seconds.
-    // ISO8601DateFormatter does not parse fractional seconds unless explicitly enabled.
     private static let fractional: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
 
-    // Keep a fallback for valid ISO-8601 timestamps that omit fractional seconds.
     private static let standard: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
@@ -57,7 +55,6 @@ final class BusLinkModel: ObservableObject {
     @Published private(set) var loading = false
     @Published private(set) var clock = Date()
 
-    // No write endpoint or event secret is included in the iPhone app.
     private let stateURL = URL(string: "https://buslink.mikegyver.workers.dev/api/state")!
     private let seenKey = "buslink.native.seen.eventIDs.v1"
     private let seededKey = "buslink.native.seeded.v1"
@@ -85,8 +82,6 @@ final class BusLinkModel: ObservableObject {
 
     func refresh() async {
         syncClock()
-        // Local weekday/time guard prevents off-hours/weekend calls. During a local
-        // watch, the Worker is authoritative and may answer SCHOOL OFF.
         guard let requestedPeriod = WatchSchedule.periodID(at: clock), let requestedWatch = watch else { return }
         guard !loading else { return }
         loading = true
@@ -110,9 +105,11 @@ final class BusLinkModel: ObservableObject {
             state = next
             lastUpdated = Date()
             error = nil
+            // If the user opens BusLink, ask WidgetKit to refresh the CarPlay/iPhone
+            // status widget as well. WidgetKit still owns the actual scheduling.
+            WidgetCenter.shared.reloadTimelines(ofKind: "BusLinkStatusWidget")
             await notifyForNewEvents(next)
         } catch {
-            // Keep the last valid state on screen. Notification failures never affect health.
             self.error = error.localizedDescription
         }
     }
@@ -137,7 +134,7 @@ final class BusLinkModel: ObservableObject {
         if !UserDefaults.standard.bool(forKey: seededKey) {
             UserDefaults.standard.set(Array(ids), forKey: seenKey)
             UserDefaults.standard.set(true, forKey: seededKey)
-            return // Existing history is the baseline on first launch.
+            return
         }
         let fresh = next.events.filter { !seen.contains("\(next.period)|\($0.id)") }
         seen.formUnion(ids)

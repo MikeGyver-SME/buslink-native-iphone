@@ -18,6 +18,10 @@ jobs:
       - name: Compile for physical iPhone
         run: |
           xcodebuild -project BusLinkNative.xcodeproj -scheme BusLinkNative -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/BusLinkBuild" CODE_SIGNING_ALLOWED=NO build
+      - name: Verify embedded widget
+        run: |
+          test -d "$RUNNER_TEMP/BusLinkBuild/Build/Products/Release-iphoneos/BusLinkNative.app/PlugIns/BusLinkWidgetExtension.appex"
+          echo "BusLinkWidgetExtension.appex embedded successfully"
       - name: Package unsigned IPA
         run: |
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
@@ -26,6 +30,6 @@ jobs:
           zip -qr "$GITHUB_WORKSPACE/BusLinkNative-unsigned.ipa" Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: BusLinkNative-unsigned-ipa
+          name: BusLinkNative-v1.2.0-carplay-unsigned-ipa
           path: BusLinkNative-unsigned.ipa
           retention-days: 14

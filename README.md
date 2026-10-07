@@ -1,39 +1,70 @@
-# BusLink Native iPhone V1.1 — School Calendar Awareness
+# BusLink Native iPhone V1.2 — CarPlay Status Widget
 
-This SwiftUI app remains a native, read-only observer of the BusLink Worker.
+BusLink V1.2 adds a **systemSmall WidgetKit status widget** designed for iPhone, StandBy, and CarPlay while preserving the proven V1.1 app and V1.4 Worker behavior.
 
-## V1.1 changes
+## What the widget shows
 
-- Monday–Friday local watch guard remains in place; Saturday/Sunday make no watch-period network calls.
-- During a weekday AM/PM window, the Worker is authoritative for school holidays/breaks.
-- If V1.4 reports `school-off`, the app displays **SCHOOL OFF** and pauses automatic 10-second refreshes for that local window.
-- Weekend UI displays **WEEKEND**.
-- The fractional-second ISO-8601 event timestamp fix remains intact.
-- No event/admin secret is embedded in the app and no write endpoint is called.
+- `READY` when the bus event and Shaira arrival are both confirmed.
+- `BUS NEAR` when the bus event is confirmed first.
+- `SHAIRA THERE` when Shaira arrives first.
+- `AM WATCH` / `PM WATCH` while monitoring with no event yet.
+- `WEEKEND`, `SCHOOL OFF`, or `STANDBY` when monitoring is paused.
+- Compact bus and Shaira rows (`1-MILE`, `ALMOST HOME`, `AT STOP`, `AWAY`, `WAITING`).
+- Last widget refresh time.
 
-The app continues to read:
+The widget is **read-only**. It calls only:
 
 `https://buslink.mikegyver.workers.dev/api/state`
 
-## Build without a Mac
+No BusLink event/admin secret is embedded and no write endpoint is called.
 
-1. Replace the contents of the existing `buslink-native-iphone` GitHub repository with this package (including `.github`).
-2. Push to `main` or run **Build BusLink iPhone IPA** manually.
-3. Download the `BusLinkNative-unsigned-ipa` artifact.
-4. Install the unsigned IPA using the same AltServer workflow already proven for the user's native iOS apps.
+## CarPlay behavior
 
-`MARKETING_VERSION` is 1.1.0 and build number is 2.
+Apple uses the app's `systemSmall` widget for CarPlay. The widget uses a removable WidgetKit background and large, glanceable status text. On iOS 27, add **BusLink Status** from the CarPlay Widgets screen after installing V1.2.
 
-## Operational behavior
+### Important freshness note
 
-- Normal weekday watch: refreshes every 10 seconds while open.
-- Weekend: standby; no watch polling.
-- School-off weekday: one authoritative check when the local watch is reached, then standby for that window.
-- Manual Refresh during a local weekday watch can force a schedule re-check after changing School Off/On.
-- iPhone Shortcuts and the Windows Watchdog remain responsible for event detection/laptop alerts; the native app is an observer.
+WidgetKit controls refresh timing. During an active watch this package requests a new timeline after 60 seconds, but iOS may coalesce or delay refreshes. The widget therefore complements — not replaces — the proven iPhone Shortcuts, Worker, native app, and Windows Watchdog event pipeline.
 
-## Validation performed before packaging
+When the native BusLink app successfully refreshes, it also calls `WidgetCenter.reloadTimelines(ofKind: "BusLinkStatusWidget")` to request an immediate widget refresh.
 
-- Swift parser check passed for all source files in the build environment.
-- `WatchSchedule` compiled and passed a Friday-AM / Saturday-suppression smoke test using Foundation.
-- Full SwiftUI/iPhone compilation must still be verified by the GitHub macOS Action, as before.
+## Version
+
+- App: **1.2.0**
+- Build: **3**
+- Main bundle ID: `studio.mikegyver.buslinknative`
+- Widget bundle ID: `studio.mikegyver.buslinknative.widget`
+- Worker/API: unchanged
+
+## GitHub Actions / AltStore deployment
+
+1. Back up the current V1.1 repo/commit (`d0ea53f`) as the known-good rollback.
+2. Copy this package over the existing `buslink-native-iphone` repository **without deleting the existing `Assets.xcassets/AppIcon.appiconset/AppIcon.png`**. The package intentionally does not replace your proven BusLink app icon.
+3. Commit and push to `main`.
+4. The existing GitHub macOS workflow generates the Xcode project, compiles the app + widget extension, verifies the `.appex` is embedded, and uploads `BusLinkNative-v1.2.0-carplay-unsigned-ipa`.
+5. Download the artifact ZIP and extract `BusLinkNative-unsigned.ipa`.
+6. Install/sign it with your proven AltServer/AltStore workflow.
+7. On iPhone, verify **BusLink Status** appears in the widget gallery.
+8. Connect to CarPlay and add **BusLink Status** from CarPlay's Widgets screen.
+
+## TestFlight path
+
+The source is TestFlight-ready, but TestFlight requires a signed archive/export using your Apple Developer team and App Store Connect credentials/provisioning. The included workflow intentionally remains the proven unsigned-IPA workflow and does **not** contain Apple signing secrets.
+
+For TestFlight, generate the same project with XcodeGen on a signed macOS runner or Xcode, archive the `BusLinkNative` scheme with your Developer Team, then upload the archive through Xcode/Transporter or a separately configured App Store Connect workflow.
+
+## Acceptance test
+
+During an AM or PM watch:
+
+1. Open the normal BusLink app and confirm it matches the web dashboard.
+2. Add the BusLink Status widget on iPhone and verify its state.
+3. Connect CarPlay and add BusLink Status.
+4. When Stopfinder triggers a bus event, verify the authoritative Worker/web/native state first.
+5. Observe the CarPlay widget update. Do not treat sub-minute widget timing as guaranteed; WidgetKit owns refresh scheduling.
+6. Verify Shaira arrival and `READY` state.
+7. Confirm weekend/school-off states remain correct.
+
+## Rollback
+
+Reinstall/build V1.1 from commit `d0ea53f` if the widget extension causes any deployment issue. The Worker and Shortcuts do not need to change for rollback.
