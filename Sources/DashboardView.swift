@@ -14,6 +14,14 @@ struct DashboardView: View {
                 header
                 watchCard
                 rendezvousCard
+                if let reason = model.pauseReason {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(reason, systemImage: "pause.circle.fill").font(.headline)
+                        Text(model.otherWatchDetail).font(.subheadline)
+                    }
+                    .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(card, in: RoundedRectangle(cornerRadius: 22))
+                } else {
                 HStack(spacing: 12) {
                     statusCard(icon: "bus.fill", title: "COLIN’S BUS",
                                value: model.currentState?.bus == true ? (model.watch == "PM" ? "Almost home" : "1-mile Loop") : "Waiting",
@@ -21,6 +29,7 @@ struct DashboardView: View {
                     statusCard(icon: "figure.walk", title: "SHAIRA",
                                value: model.currentState?.shaira == true ? "At bus stop" : "Away",
                                time: model.currentState?.shairaAt, active: model.currentState?.shaira == true)
+                }
                 }
                 eventsCard
                 controls
@@ -35,8 +44,8 @@ struct DashboardView: View {
             await model.updateNotificationStatus()
             while !Task.isCancelled {
                 model.syncClock()
-                if model.onWatch { await model.refresh() }
-                let seconds = model.onWatch ? 10 : max(1, WatchSchedule.secondsUntilNextStart())
+                await model.refresh()
+                let seconds = model.onWatch ? 10 : min(60, max(1, WatchSchedule.secondsUntilNextStart()))
                 try? await Task.sleep(for: .seconds(seconds))
                 guard !Task.isCancelled else { break }
             }
@@ -61,6 +70,7 @@ struct DashboardView: View {
 
     private var watchCard: some View {
         let title = model.onWatch ? (model.watch == "AM" ? "MORNING WATCH" : "AFTERNOON WATCH")
+            : model.pausedWatch != nil ? "\(model.pausedWatch!) BUS WATCH PAUSED"
             : model.schoolOffReason != nil ? "SCHOOL OFF"
             : WatchSchedule.isWeekend(at: model.clock) ? "WEEKEND" : "OFF WATCH"
         let icon = model.onWatch ? "dot.radiowaves.left.and.right"
@@ -70,14 +80,18 @@ struct DashboardView: View {
                 Label(title, systemImage: icon)
                     .font(.subheadline.bold()).foregroundStyle(model.onWatch ? mint : .white.opacity(0.65))
                 Spacer()
-                Text(model.onWatch ? "LIVE" : "STANDBY")
+                Text(model.onWatch ? "LIVE" : model.pausedWatch != nil ? "PAUSED" : "STANDBY")
                     .font(.caption.bold()).tracking(1)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background((model.onWatch ? mint : .gray).opacity(0.18), in: Capsule())
             }
             Text("Mon–Fri • 8:15–9:00 AM  •  4:15–5:00 PM CT")
                 .font(.caption).foregroundStyle(.white.opacity(0.65))
-            if let reason = model.schoolOffReason {
+            if let reason = model.pauseReason {
+                Label(reason, systemImage: "pause.circle.fill")
+                    .font(.caption).foregroundStyle(.white.opacity(0.75))
+                Text(model.otherWatchDetail).font(.caption).foregroundStyle(mint)
+            } else if let reason = model.schoolOffReason {
                 Label("Monitoring paused • \(reason)", systemImage: "pause.circle.fill")
                     .font(.caption).foregroundStyle(.white.opacity(0.65))
             } else if WatchSchedule.isWeekend(at: model.clock) {
@@ -102,11 +116,11 @@ struct DashboardView: View {
         let bus = model.currentState?.bus == true && model.onWatch
         let shaira = model.currentState?.shaira == true && model.onWatch
         let ready = bus && shaira
-        let title = ready ? "RENDEZVOUS READY"
+        let title = model.pausedWatch != nil ? "\(model.pausedWatch!) PAUSED" : ready ? "RENDEZVOUS READY"
             : model.schoolOffReason != nil ? "SCHOOL OFF"
             : WatchSchedule.isWeekend(at: model.clock) ? "WEEKEND"
             : (bus && model.watch == "AM" ? "GO TO THE BUS" : (model.onWatch ? "WAITING" : "OFF WATCH"))
-        let detail = ready ? (model.watch == "AM" ? "The 1-mile Loop alert and Shaira’s arrival are confirmed." : "Shaira is at the stop and Colin’s bus is almost home.")
+        let detail = model.pauseReason != nil ? "\(model.pauseReason!) • \(model.otherWatchDetail)" : ready ? (model.watch == "AM" ? "The 1-mile Loop alert and Shaira’s arrival are confirmed." : "Shaira is at the stop and Colin’s bus is almost home.")
             : bus ? (model.watch == "AM" ? "The bus reached the 1-mile Loop." : "The bus is almost home; waiting for Shaira.")
             : shaira ? "Shaira is at the stop; waiting for the bus."
             : model.schoolOffReason != nil ? "Bus monitoring is paused for \(model.schoolOffReason!)."
@@ -147,7 +161,8 @@ struct DashboardView: View {
                     if event.id != events.last?.id { Divider().overlay(.white.opacity(0.12)) }
                 }
             } else {
-                Text(model.schoolOffReason != nil ? "Event log paused for this school-off day."
+                Text(model.pausedWatch != nil ? "Event log paused for this watch."
+                     : model.schoolOffReason != nil ? "Event log paused for this school-off day."
                      : WatchSchedule.isWeekend(at: model.clock) ? "Event log resumes on the next school day."
                      : "No events for this watch period.")
                     .font(.subheadline).foregroundStyle(.white.opacity(0.6))

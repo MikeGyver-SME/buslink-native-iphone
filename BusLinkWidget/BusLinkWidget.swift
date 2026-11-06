@@ -7,12 +7,21 @@ private struct WidgetEvent: Decodable {
     let source: String
 }
 
+private struct WidgetDailySchedule: Decodable {
+    let amEnabled: Bool
+    let pmEnabled: Bool
+    let amReason: String?
+    let pmReason: String?
+}
+
 private struct WidgetServerPeriod: Decodable {
     let id: String
     let watch: String?
     let reason: String?
     let monitoringEnabled: Bool?
     let schoolOffReason: String?
+    let pausedWatch: String?
+    let schedule: WidgetDailySchedule?
 }
 
 private struct WidgetBusState: Decodable {
@@ -34,7 +43,7 @@ private struct BusLinkWidgetEntry: TimelineEntry {
 }
 
 private struct BusLinkWidgetProvider: TimelineProvider {
-    private let stateURL = URL(string: "https://buslink.mikegyver.workers.dev/api/state")!
+    private let stateURL = URL(string: "https://buslink-v2.mikegyver.workers.dev/api/state")!
 
     func placeholder(in context: Context) -> BusLinkWidgetEntry { .placeholder }
 
@@ -77,7 +86,8 @@ private struct BusLinkWidgetProvider: TimelineProvider {
         if state?.serverPeriod.watch != nil && state?.serverPeriod.monitoringEnabled != false {
             return date.addingTimeInterval(60)
         }
-        return BusLinkWidgetSchedule.nextWatchStart(after: date) ?? date.addingTimeInterval(3600)
+        let nextStart = BusLinkWidgetSchedule.nextWatchStart(after: date) ?? date.addingTimeInterval(3600)
+        return min(nextStart, date.addingTimeInterval(300))
     }
 }
 
@@ -117,6 +127,7 @@ private struct BusLinkWidgetView: View {
 
     private var headline: String {
         if entry.error { return "CHECK APP" }
+        if reason == "watch-paused" { return "\(state?.serverPeriod.pausedWatch ?? "WATCH") PAUSED" }
         if reason == "weekend" { return "WEEKEND" }
         if reason == "school-off" { return "SCHOOL OFF" }
         if ready { return "READY" }
@@ -125,6 +136,14 @@ private struct BusLinkWidgetView: View {
         if watch == "AM" { return "AM WATCH" }
         if watch == "PM" { return "PM WATCH" }
         return "STANDBY"
+    }
+
+    private var otherWatchDetail: String {
+        guard let schedule = state?.serverPeriod.schedule else { return "See app for schedule" }
+        if state?.serverPeriod.pausedWatch == "AM" {
+            return schedule.pmEnabled ? "PM ON • 4:15 PM CT" : "PM OFF"
+        }
+        return schedule.amEnabled ? "AM ON • 8:15 AM CT" : "AM OFF"
     }
 
     private var busText: String {
@@ -152,6 +171,11 @@ private struct BusLinkWidgetView: View {
 
             Spacer(minLength: 0)
 
+            if reason == "watch-paused" {
+                Text(state?.serverPeriod.schoolOffReason ?? "Scheduled exception")
+                    .font(.caption.bold()).lineLimit(2).minimumScaleFactor(0.75)
+                Text(otherWatchDetail).font(.caption2).lineLimit(2).minimumScaleFactor(0.75)
+            } else {
             Label(busText, systemImage: "bus.fill")
                 .font(.caption.bold())
                 .lineLimit(1)
@@ -160,6 +184,8 @@ private struct BusLinkWidgetView: View {
                 .font(.caption.bold())
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
+
+            }
 
             Text(entry.date.formatted(date: .omitted, time: .shortened))
                 .font(.caption2)

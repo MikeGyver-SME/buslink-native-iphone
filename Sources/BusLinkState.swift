@@ -28,12 +28,21 @@ struct BusEvent: Decodable, Identifiable {
     var date: Date? { BusLinkDate.parse(at) }
 }
 
+struct BusLinkDailySchedule: Decodable {
+    let amEnabled: Bool
+    let pmEnabled: Bool
+    let amReason: String?
+    let pmReason: String?
+}
+
 struct ServerPeriod: Decodable {
     let id: String
     let watch: String?
     let reason: String?
     let monitoringEnabled: Bool?
     let schoolOffReason: String?
+    let pausedWatch: String?
+    let schedule: BusLinkDailySchedule?
 }
 
 struct BusState: Decodable {
@@ -55,7 +64,7 @@ final class BusLinkModel: ObservableObject {
     @Published private(set) var loading = false
     @Published private(set) var clock = Date()
 
-    private let stateURL = URL(string: "https://buslink.mikegyver.workers.dev/api/state")!
+    private let stateURL = URL(string: "https://buslink-v2.mikegyver.workers.dev/api/state")!
     private let seenKey = "buslink.native.seen.eventIDs.v1"
     private let seededKey = "buslink.native.seeded.v1"
 
@@ -65,7 +74,21 @@ final class BusLinkModel: ObservableObject {
               state?.serverPeriod.reason == "school-off" else { return nil }
         return state?.serverPeriod.schoolOffReason ?? "School holiday / break"
     }
-    var schedulePaused: Bool { schoolOffReason != nil || WatchSchedule.isWeekend(at: clock) }
+    var pausedWatch: String? {
+        guard let server = state?.serverPeriod,
+              server.id == "\(WatchSchedule.dayID(at: clock))-OFF",
+              server.reason == "watch-paused", server.pausedWatch == watch else { return nil }
+        return server.pausedWatch
+    }
+    var pauseReason: String? { pausedWatch == nil ? nil : state?.serverPeriod.schoolOffReason ?? "Scheduled exception" }
+    var otherWatchDetail: String {
+        guard let pausedWatch, let schedule = state?.serverPeriod.schedule else { return "Check today's schedule in admin." }
+        if pausedWatch == "AM" {
+            return schedule.pmEnabled ? "Afternoon watch ON • 4:15–5:00 PM CT" : "Afternoon watch OFF"
+        }
+        return schedule.amEnabled ? "Morning watch ON • 8:15–9:00 AM CT" : "Morning watch OFF"
+    }
+    var schedulePaused: Bool { pausedWatch != nil || schoolOffReason != nil || WatchSchedule.isWeekend(at: clock) }
     var onWatch: Bool { watch != nil && !schedulePaused }
     var currentState: BusState? {
         guard onWatch, let state, state.period == WatchSchedule.periodID(at: clock) else { return nil }
@@ -82,7 +105,8 @@ final class BusLinkModel: ObservableObject {
 
     func refresh() async {
         syncClock()
-        guard let requestedPeriod = WatchSchedule.periodID(at: clock), let requestedWatch = watch else { return }
+        let requestedPeriod = WatchSchedule.periodID(at: clock) ?? "\(WatchSchedule.dayID(at: clock))-OFF"
+        let requestedWatch = watch
         guard !loading else { return }
         loading = true
         defer { loading = false }
@@ -99,9 +123,11 @@ final class BusLinkModel: ObservableObject {
             let today = WatchSchedule.dayID(at: clock)
             let activeMatch = next.period == requestedPeriod && next.serverPeriod.id == requestedPeriod && next.serverPeriod.watch == requestedWatch
             let pausedMatch = next.serverPeriod.id == "\(today)-OFF" && next.period == next.serverPeriod.id &&
-                (next.serverPeriod.reason == "school-off" || next.serverPeriod.reason == "weekend")
+                (next.serverPeriod.reason == "school-off" || next.serverPeriod.reason == "weekend" ||
+                 (next.serverPeriod.reason == "watch-paused" && next.serverPeriod.pausedWatch != nil && next.serverPeriod.pausedWatch == requestedWatch) ||
+                 (next.serverPeriod.reason == "off-hours" && requestedWatch == nil))
             guard activeMatch || pausedMatch else { throw BusLinkError.invalidPeriod }
-            guard !Task.isCancelled, WatchSchedule.periodID() == requestedPeriod else { return }
+            guard !Task.isCancelled, (WatchSchedule.periodID() ?? "\(WatchSchedule.dayID())-OFF") == requestedPeriod else { return }
             state = next
             lastUpdated = Date()
             error = nil
